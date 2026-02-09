@@ -1,10 +1,3 @@
-"""
-Task 1 - The Cheater
-Train a CNN that exploits the spurious color correlation.
-
-"All models are wrong, some are useful." — George Box
-"""
-
 import matplotlib
 matplotlib.use('Agg')  # Non-interactive backend
 
@@ -20,27 +13,17 @@ import seaborn as sns
 import os
 from tqdm import tqdm
 
-# Import our dataset
 from task0_biased_dataset import (
     ColoredMNIST, DIGIT_COLORS, COLOR_NAMES, 
     colorize_mnist_image, get_dataloaders
 )
 
-# Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-print(f"Using device: {device}")
-
 
 class SimpleCNN(nn.Module):
-    """
-    A simple 3-layer CNN for Colored-MNIST classification.
-    Designed to be interpretable for later tasks.
-    """
-    
     def __init__(self, num_classes=10):
         super(SimpleCNN, self).__init__()
         
-        # Convolutional layers
         self.conv1 = nn.Conv2d(3, 32, kernel_size=3, padding=1)
         self.bn1 = nn.BatchNorm2d(32)
         
@@ -53,41 +36,31 @@ class SimpleCNN(nn.Module):
         self.pool = nn.MaxPool2d(2, 2)
         self.dropout = nn.Dropout(0.25)
         
-        # Fully connected layers
-        # After 3 poolings: 28 -> 14 -> 7 -> 3
         self.fc1 = nn.Linear(128 * 3 * 3, 256)
         self.fc2 = nn.Linear(256, num_classes)
         
-        # For Grad-CAM: store activations and gradients
         self.activations = None
         self.gradients = None
     
     def activations_hook(self, grad):
-        """Hook for capturing gradients."""
         self.gradients = grad
     
     def forward(self, x):
-        # Conv block 1
         x = self.pool(F.relu(self.bn1(self.conv1(x))))
         
-        # Conv block 2
         x = self.pool(F.relu(self.bn2(self.conv2(x))))
         
-        # Conv block 3 (final conv layer for Grad-CAM)
         x = self.conv3(x)
         x = self.bn3(x)
         x = F.relu(x)
         
-        # Store activations for Grad-CAM
         self.activations = x
         
-        # Register hook for gradients
         if x.requires_grad:
             x.register_hook(self.activations_hook)
         
         x = self.pool(x)
         
-        # Flatten and FC layers
         x = x.view(x.size(0), -1)
         x = self.dropout(x)
         x = F.relu(self.fc1(x))
@@ -102,20 +75,13 @@ class SimpleCNN(nn.Module):
     def get_gradients(self):
         return self.gradients
 
-
 class ResNetSmall(nn.Module):
-    """
-    A smaller ResNet-style network for Colored-MNIST.
-    Includes residual connections.
-    """
-    
     def __init__(self, num_classes=10):
         super(ResNetSmall, self).__init__()
         
         self.conv1 = nn.Conv2d(3, 64, kernel_size=3, padding=1)
         self.bn1 = nn.BatchNorm2d(64)
         
-        # Residual blocks
         self.res_block1 = self._make_res_block(64, 64)
         self.res_block2 = self._make_res_block(64, 128, downsample=True)
         self.res_block3 = self._make_res_block(128, 128)
@@ -123,7 +89,6 @@ class ResNetSmall(nn.Module):
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.fc = nn.Linear(128, num_classes)
         
-        # For Grad-CAM
         self.activations = None
         self.gradients = None
     
@@ -145,21 +110,17 @@ class ResNetSmall(nn.Module):
     def forward(self, x):
         x = F.relu(self.bn1(self.conv1(x)))
         
-        # Res block 1
         identity = x
         x = self.res_block1(x)
         x = F.relu(x + identity)
         
-        # Res block 2 (with downsample)
         x = self.res_block2(x)
         x = F.relu(x)
         
-        # Res block 3 (final conv layer for Grad-CAM)
         identity = x
         x = self.res_block3(x)
         x = F.relu(x + identity)
         
-        # Store activations
         self.activations = x
         if x.requires_grad:
             x.register_hook(self.activations_hook)
@@ -176,9 +137,7 @@ class ResNetSmall(nn.Module):
     def get_gradients(self):
         return self.gradients
 
-
 def train_epoch(model, train_loader, criterion, optimizer, device):
-    """Train for one epoch."""
     model.train()
     running_loss = 0.0
     correct = 0
@@ -206,9 +165,7 @@ def train_epoch(model, train_loader, criterion, optimizer, device):
     
     return running_loss / len(train_loader), 100. * correct / total
 
-
 def evaluate(model, data_loader, criterion, device, desc='Evaluating'):
-    """Evaluate the model."""
     model.eval()
     running_loss = 0.0
     correct = 0
@@ -242,9 +199,7 @@ def evaluate(model, data_loader, criterion, device, desc='Evaluating'):
             np.array(all_preds), 
             np.array(all_labels))
 
-
 def plot_confusion_matrix(y_true, y_pred, title, save_path):
-    """Plot and save confusion matrix."""
     cm = confusion_matrix(y_true, y_pred)
     
     plt.figure(figsize=(10, 8))
@@ -259,49 +214,35 @@ def plot_confusion_matrix(y_true, y_pred, title, save_path):
     
     return cm
 
-
 def test_conflicting_images(model, device):
-    """
-    Test the model on conflicting images (e.g., Red 1, Green 0)
-    to prove it's looking at color.
-    """
     import torchvision
     import torchvision.transforms as transforms
     
-    print("\n" + "=" * 50)
-    print("Testing on Conflicting Images (Proving Color Bias)")
-    print("=" * 50)
-    
-    # Load a few MNIST images
     mnist = torchvision.datasets.MNIST(root='./data', train=False, download=True)
     
     model.eval()
     results = []
     
-    # Test cases: (digit, color_to_apply, expected_if_cheating)
     test_cases = [
-        (1, 0, "Model sees Red → predicts 0?"),  # Red 1
-        (0, 1, "Model sees Green → predicts 1?"),  # Green 0
-        (2, 3, "Model sees Yellow → predicts 3?"),  # Yellow 2
-        (5, 0, "Model sees Red → predicts 0?"),  # Red 5
-        (7, 1, "Model sees Green → predicts 1?"),  # Green 7
+        (1, 0, "Model sees Red → predicts 0?"),
+        (0, 1, "Model sees Green → predicts 1?"),
+        (2, 3, "Model sees Yellow → predicts 3?"),
+        (5, 0, "Model sees Red → predicts 0?"),
+        (7, 1, "Model sees Green → predicts 1?"),
     ]
     
     fig, axes = plt.subplots(2, len(test_cases), figsize=(15, 8))
     
     for i, (digit, color_digit, description) in enumerate(test_cases):
-        # Find an image of the digit
         for idx in range(len(mnist)):
             if mnist[idx][1] == digit:
                 image = mnist[idx][0]
                 break
         
-        # Colorize with the "wrong" color
         image_tensor = transforms.ToTensor()(image)
         color = DIGIT_COLORS[color_digit]
         colored = colorize_mnist_image(image_tensor, color, add_texture=True)
         
-        # Get prediction
         with torch.no_grad():
             input_tensor = colored.unsqueeze(0).to(device)
             output = model(input_tensor)
@@ -309,7 +250,6 @@ def test_conflicting_images(model, device):
             pred = output.argmax(dim=1).item()
             confidence = probs[0, pred].item()
         
-        # Store results
         results.append({
             'digit': digit,
             'color': COLOR_NAMES[color_digit],
@@ -318,12 +258,10 @@ def test_conflicting_images(model, device):
             'cheating': pred == color_digit
         })
         
-        # Plot image
         axes[0, i].imshow(colored.permute(1, 2, 0).numpy())
         axes[0, i].set_title(f"True: {digit}, Color: {COLOR_NAMES[color_digit]}")
         axes[0, i].axis('off')
         
-        # Plot prediction probabilities
         probs_np = probs[0].cpu().numpy()
         colors = ['red' if j == pred else 'blue' for j in range(10)]
         axes[1, i].bar(range(10), probs_np, color=colors)
@@ -337,85 +275,42 @@ def test_conflicting_images(model, device):
     plt.savefig('outputs/conflicting_predictions.png', dpi=150, bbox_inches='tight')
     plt.show()
     
-    # Print summary
-    print("\nResults Summary:")
-    print("-" * 60)
-    cheating_count = 0
-    for r in results:
-        status = "CHEATING" if r['cheating'] else "OK"
-        print(f"  Digit {r['digit']} in {r['color']}: "
-              f"Predicted {r['predicted']} ({r['confidence']:.1%}) - {status}")
-        if r['cheating']:
-            cheating_count += 1
-    
-    print("-" * 60)
-    print(f"Evidence of color bias: {cheating_count}/{len(results)} predictions "
-          f"based on color instead of shape")
-    
     return results
 
-
 def train_lazy_model(num_epochs=20, batch_size=64, lr=0.001, model_type='simple'):
-    """Train the 'lazy' model that exploits color bias."""
-    
-    print("=" * 60)
-    print("TASK 1: Training the Cheater (Lazy) Model")
-    print("=" * 60)
-    
-    # Create datasets and dataloaders with 99.9% color correlation!
-    print("\nPreparing datasets with 99.9% color correlation...")
     train_loader, val_loader, hard_test_loader, easy_train, hard_test = \
         get_dataloaders(batch_size=batch_size, correlation_strength=0.999)
     
-    print(f"Train batches: {len(train_loader)}")
-    print(f"Val batches: {len(val_loader)}")
-    print(f"Hard test batches: {len(hard_test_loader)}")
-    
-    # Create model
     if model_type == 'simple':
         model = SimpleCNN(num_classes=10).to(device)
     else:
         model = ResNetSmall(num_classes=10).to(device)
     
-    print(f"\nModel: {model_type.upper()}")
-    print(f"Parameters: {sum(p.numel() for p in model.parameters()):,}")
-    
-    # Training setup
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
     
-    # Training history
     history = {
         'train_loss': [], 'train_acc': [],
         'val_loss': [], 'val_acc': [],
         'hard_test_acc': []
     }
     
-    # Training loop
-    print("\n" + "-" * 40)
-    print("Training on Easy (Biased) Dataset...")
-    print("-" * 40)
-    
     best_val_acc = 0
     for epoch in range(num_epochs):
-        print(f"\nEpoch {epoch+1}/{num_epochs}")
         
-        # Train
         train_loss, train_acc = train_epoch(
             model, train_loader, criterion, optimizer, device
         )
         history['train_loss'].append(train_loss)
         history['train_acc'].append(train_acc)
         
-        # Validate on easy set
         val_loss, val_acc, _, _ = evaluate(
             model, val_loader, criterion, device, desc='Val (Easy)'
         )
         history['val_loss'].append(val_loss)
         history['val_acc'].append(val_acc)
         
-        # Test on hard set (for monitoring)
         _, hard_acc, _, _ = evaluate(
             model, hard_test_loader, criterion, device, desc='Test (Hard)'
         )
@@ -423,14 +318,10 @@ def train_lazy_model(num_epochs=20, batch_size=64, lr=0.001, model_type='simple'
         
         scheduler.step()
         
-        # Save best model
         if val_acc > best_val_acc:
             best_val_acc = val_acc
             torch.save(model.state_dict(), 'models/lazy_model.pth')
-        
-        print(f"Train: {train_acc:.2f}% | Val: {val_acc:.2f}% | Hard Test: {hard_acc:.2f}%")
     
-    # Plot training history
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
     
     axes[0].plot(history['train_loss'], label='Train Loss')
@@ -455,33 +346,14 @@ def train_lazy_model(num_epochs=20, batch_size=64, lr=0.001, model_type='simple'
     plt.savefig('outputs/lazy_model_training.png', dpi=150, bbox_inches='tight')
     plt.show()
     
-    # Final evaluation
-    print("\n" + "=" * 50)
-    print("FINAL EVALUATION")
-    print("=" * 50)
-    
-    # Load best model
     model.load_state_dict(torch.load('models/lazy_model.pth'))
-    
-    # Easy validation
-    print("\n--- Easy Validation Set ---")
     _, easy_acc, easy_preds, easy_labels = evaluate(
         model, val_loader, criterion, device, desc='Easy Val'
     )
-    print(f"Accuracy: {easy_acc:.2f}%")
     
-    # Hard test (THE TRAP!)
-    print("\n--- Hard Test Set (THE TRAP) ---")
     _, hard_acc, hard_preds, hard_labels = evaluate(
         model, hard_test_loader, criterion, device, desc='Hard Test'
     )
-    print(f"Accuracy: {hard_acc:.2f}%")
-    print(f"\n⚠️  Accuracy dropped from {easy_acc:.1f}% to {hard_acc:.1f}%!")
-    print(f"   This proves the model learned color, not shape!")
-    
-    # Confusion matrices
-    print("\n" + "-" * 40)
-    print("Generating Confusion Matrices...")
     
     plot_confusion_matrix(
         easy_labels, easy_preds,
@@ -495,34 +367,14 @@ def train_lazy_model(num_epochs=20, batch_size=64, lr=0.001, model_type='simple'
         'outputs/confusion_matrix_hard.png'
     )
     
-    # Classification reports
-    print("\nClassification Report - Easy Set:")
-    print(classification_report(easy_labels, easy_preds))
-    
-    print("\nClassification Report - Hard Set:")
-    print(classification_report(hard_labels, hard_preds))
-    
-    # Test on conflicting images
     conflict_results = test_conflicting_images(model, device)
-    
-    print("\n" + "=" * 60)
-    print("Task 1 Complete!")
-    print("=" * 60)
-    print(f"\nKey Results:")
-    print(f"  - Easy Set Accuracy: {easy_acc:.2f}% ✓")
-    print(f"  - Hard Set Accuracy: {hard_acc:.2f}% (Expected to be low)")
-    print(f"  - Model saved to: models/lazy_model.pth")
-    print(f"\nThe model is a CHEATER - it learned to look at color!")
     
     return model, history
 
-
 if __name__ == '__main__':
-    # Ensure directories exist
     os.makedirs('outputs', exist_ok=True)
     os.makedirs('models', exist_ok=True)
     
-    # Train the lazy model
     model, history = train_lazy_model(
         num_epochs=15,
         batch_size=64,
