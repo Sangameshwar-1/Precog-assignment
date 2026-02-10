@@ -8,14 +8,12 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 import numpy as np
 import matplotlib.pyplot as plt
-from sklearn.metrics import confusion_matrix
-import seaborn as sns
 import os
 from tqdm import tqdm
 import random
 
 from task0_biased_dataset import (
-    ColoredMNIST, DIGIT_COLORS, COLOR_NAMES, 
+    ColoredMNIST, DIGIT_COLORS,
     colorize_mnist_image, get_random_color
 )
 from task1_cheater_model import SimpleCNN, evaluate, device
@@ -136,104 +134,6 @@ def train_with_color_invariance(num_epochs=20, batch_size=64, lr=0.001,
     
     return model, history
 
-class SaliencyGuidedLoss(nn.Module):
-    def __init__(self, weight=1.0):
-        super().__init__()
-        self.weight = weight
-    
-    def forward(self, input_grads, digit_masks):
-        grad_magnitude = input_grads.abs().mean(dim=1)
-        
-        background_mask = (1 - digit_masks).float()
-        
-        background_attention = (grad_magnitude * background_mask).mean()
-        
-        return self.weight * background_attention
-
-class MaskedColoredMNIST(Dataset):
-    def __init__(self, base_dataset):
-        self.base = base_dataset
-    
-    def __len__(self):
-        return len(self.base)
-    
-    def __getitem__(self, idx):
-        image, label = self.base[idx]
-        
-        gray_image = np.array(self.base.mnist[idx][0]) / 255.0
-        mask = (gray_image > 0.1).astype(np.float32)
-        
-        return image, torch.tensor(mask), label
-
-def train_with_saliency_guidance(num_epochs=20, batch_size=64, lr=0.001,
-                                   saliency_weight=0.5):
-    easy_train = ColoredMNIST(root='./data', train=True, mode='easy')
-    masked_train = MaskedColoredMNIST(easy_train)
-    hard_test = ColoredMNIST(root='./data', train=False, mode='hard')
-    
-    train_loader = DataLoader(masked_train, batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(hard_test, batch_size=batch_size, shuffle=False)
-    
-    model = SimpleCNN(num_classes=10).to(device)
-    saliency_loss = SaliencyGuidedLoss(weight=saliency_weight)
-    
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=lr)
-    
-    history = {'train_acc': [], 'hard_test_acc': []}
-    
-    for epoch in range(num_epochs):
-        model.train()
-        correct = 0
-        total = 0
-        total_ce_loss = 0
-        total_sal_loss = 0
-        
-        pbar = tqdm(train_loader, desc=f'Epoch {epoch+1}/{num_epochs}')
-        for images, masks, labels in pbar:
-            images = images.to(device).requires_grad_(True)
-            masks = masks.to(device)
-            labels = labels.to(device)
-            
-            optimizer.zero_grad()
-            
-            outputs = model(images)
-            ce_loss = criterion(outputs, labels)
-            
-            ce_loss.backward(retain_graph=True)
-            input_grads = images.grad.clone()
-            
-            sal_loss = saliency_loss(input_grads, masks)
-            
-            optimizer.zero_grad()
-            images.grad = None
-            outputs = model(images)
-            total_loss = criterion(outputs, labels) + sal_loss
-            total_loss.backward()
-            optimizer.step()
-            
-            _, predicted = outputs.max(1)
-            total += labels.size(0)
-            correct += predicted.eq(labels).sum().item()
-            total_ce_loss += ce_loss.item()
-            total_sal_loss += sal_loss.item()
-            
-            pbar.set_postfix({
-                'CE': total_ce_loss / (pbar.n + 1),
-                'Sal': total_sal_loss / (pbar.n + 1),
-                'Acc': 100. * correct / total
-            })
-        
-        history['train_acc'].append(100. * correct / total)
-        
-        _, hard_acc, _, _ = evaluate(model, test_loader, criterion, device,
-                                      desc='Hard Test')
-        history['hard_test_acc'].append(hard_acc)
-    
-    torch.save(model.state_dict(), 'models/robust_saliency_guided.pth')
-    
-    return model, history
-
 class ColorAugmentedMNIST(Dataset):
     def __init__(self, base_dataset, augment_prob=0.8):
         self.base = base_dataset
@@ -312,72 +212,6 @@ def train_with_color_augmentation(num_epochs=20, batch_size=64, lr=0.001,
     
     return model, history
 
-def adversarial_color_attack(model, images, labels, epsilon=0.3):
-    images_adv = images.clone().requires_grad_(True)
-    
-    outputs = model(images_adv)
-    loss = F.cross_entropy(outputs, labels)
-    loss.backward()
-    
-    perturbation = epsilon * images_adv.grad.sign()
-    images_adv = images + perturbation
-    images_adv = torch.clamp(images_adv, 0, 1)
-    
-    return images_adv.detach()
-
-def train_with_adversarial_colors(num_epochs=20, batch_size=64, lr=0.001,
-                                    adv_epsilon=0.2, adv_prob=0.5):
-    easy_train = ColoredMNIST(root='./data', train=True, mode='easy')
-    hard_test = ColoredMNIST(root='./data', train=False, mode='hard')
-    
-    train_loader = DataLoader(easy_train, batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(hard_test, batch_size=batch_size, shuffle=False)
-    
-    model = SimpleCNN(num_classes=10).to(device)
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=lr)
-    
-    history = {'train_acc': [], 'hard_test_acc': []}
-    
-    for epoch in range(num_epochs):
-        model.train()
-        correct = 0
-        total = 0
-        running_loss = 0
-        
-        pbar = tqdm(train_loader, desc=f'Epoch {epoch+1}/{num_epochs}')
-        for images, labels in pbar:
-            images, labels = images.to(device), labels.to(device)
-            
-            if random.random() < adv_prob:
-                images = adversarial_color_attack(model, images, labels, adv_epsilon)
-            
-            optimizer.zero_grad()
-            outputs = model(images)
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
-            
-            _, predicted = outputs.max(1)
-            total += labels.size(0)
-            correct += predicted.eq(labels).sum().item()
-            running_loss += loss.item()
-            
-            pbar.set_postfix({
-                'loss': running_loss / (pbar.n + 1),
-                'acc': 100. * correct / total
-            })
-        
-        history['train_acc'].append(100. * correct / total)
-        
-        _, hard_acc, _, _ = evaluate(model, test_loader, criterion, device,
-                                      desc='Hard Test')
-        history['hard_test_acc'].append(hard_acc)
-    
-    torch.save(model.state_dict(), 'models/robust_adversarial.pth')
-    
-    return model, history
-
 def compare_methods():
     results = {}
     histories = {}
@@ -415,7 +249,7 @@ def compare_methods():
     axes[1].set_title('Final Accuracy Comparison')
     axes[1].set_ylim(0, 100)
     
-    for i, (method, acc) in enumerate(zip(methods, accuracies)):
+    for i, (m, acc) in enumerate(zip(methods, accuracies)):
         axes[1].text(i, acc + 2, f'{acc:.1f}%', ha='center', fontsize=10)
     
     plt.tight_layout()
