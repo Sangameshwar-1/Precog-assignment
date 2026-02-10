@@ -18,9 +18,12 @@ def run_all_tasks():
     
     print_banner("TASK 0: Creating Colored-MNIST")
     try:
-        from task0_biased_dataset import ColoredMNIST, visualize_color_mapping
+        from task0_biased_dataset import ColoredMNIST, visualize_color_mapping, visualize_dataset_samples
         easy_train = ColoredMNIST(root='./data', train=True, mode='easy')
         hard_test = ColoredMNIST(root='./data', train=False, mode='hard')
+        visualize_color_mapping()
+        visualize_dataset_samples(easy_train, "Easy Train Set (95% Correlated)", save_path='outputs/easy_train_samples.png')
+        visualize_dataset_samples(hard_test, "Hard Test Set (Inverted Colors)", save_path='outputs/hard_test_samples.png')
         print("Task 0 done")
     except Exception as e:
         print(f"Task 0 failed: {e}")

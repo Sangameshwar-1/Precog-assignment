@@ -213,7 +213,7 @@ def analyze_sae_features(sae, activations, labels, dataset, num_features=16):
     
     plt.tight_layout()
     plt.savefig('outputs/task6_sae_feature_analysis.png', dpi=150, bbox_inches='tight')
-    plt.show()
+    plt.close()
     
     return feature_class_correlation, most_selective
 
@@ -366,7 +366,7 @@ def intervention_experiment(sae, model, dataset, layer_name,
     plt.suptitle('SAE Feature Interventions', fontsize=14)
     plt.tight_layout()
     plt.savefig('outputs/task6_interventions.png', dpi=150, bbox_inches='tight')
-    plt.show()
+    plt.close()
 
 def run_task6():
     lazy_model = SimpleCNN(num_classes=10).to(device)
@@ -409,7 +409,7 @@ def run_task6():
     ax.legend()
     ax.grid(True)
     plt.savefig('outputs/task6_sae_training.png', dpi=150, bbox_inches='tight')
-    plt.show()
+    plt.close()
     
     torch.save(sae.state_dict(), 'models/sae_fc1.pth')
     
@@ -430,7 +430,7 @@ def run_task6():
     ax.set_title('Feature Color Sensitivity Distribution')
     ax.legend()
     plt.savefig('outputs/task6_color_sensitivity.png', dpi=150, bbox_inches='tight')
-    plt.show()
+    plt.close()
     
     intervention_experiment(
         sae, lazy_model, easy_train, layer_name,

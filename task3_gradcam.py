@@ -152,7 +152,7 @@ def visualize_gradcam(model, image, true_label=None, target_class=None,
     
     if save_path:
         plt.savefig(save_path, dpi=150, bbox_inches='tight')
-    plt.show()
+    plt.close()
     
     return cam, pred_class, confidence
 
@@ -229,7 +229,7 @@ def analyze_biased_vs_conflicting(model):
                  fontsize=14, fontweight='bold')
     plt.tight_layout()
     plt.savefig('outputs/task3_biased_vs_conflicting.png', dpi=150, bbox_inches='tight')
-    plt.show()
+    plt.close()
 
 def analyze_attention_distribution(model):
     import torchvision
@@ -288,7 +288,7 @@ def analyze_attention_distribution(model):
     plt.suptitle('Attention Analysis: Shape vs Color Focus', fontsize=14)
     plt.tight_layout()
     plt.savefig('outputs/task3_attention_distribution.png', dpi=150, bbox_inches='tight')
-    plt.show()
+    plt.close()
 
 def run_task3():
     model = SimpleCNN(num_classes=10).to(device)

@@ -254,7 +254,7 @@ def compare_methods():
     
     plt.tight_layout()
     plt.savefig('outputs/task4_method_comparison.png', dpi=150, bbox_inches='tight')
-    plt.show()
+    plt.close()
     
     return results
 

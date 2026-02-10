@@ -210,7 +210,7 @@ def plot_confusion_matrix(y_true, y_pred, title, save_path):
     plt.title(title)
     plt.tight_layout()
     plt.savefig(save_path, dpi=150, bbox_inches='tight')
-    plt.show()
+    plt.close()
     
     return cm
 
@@ -273,7 +273,7 @@ def test_conflicting_images(model, device):
     plt.suptitle("Conflicting Images: Does Model Look at Color or Shape?", fontsize=14)
     plt.tight_layout()
     plt.savefig('outputs/conflicting_predictions.png', dpi=150, bbox_inches='tight')
-    plt.show()
+    plt.close()
     
     return results
 
@@ -344,7 +344,7 @@ def train_lazy_model(num_epochs=20, batch_size=64, lr=0.001, model_type='simple'
     
     plt.tight_layout()
     plt.savefig('outputs/lazy_model_training.png', dpi=150, bbox_inches='tight')
-    plt.show()
+    plt.close()
     
     model.load_state_dict(torch.load('models/lazy_model.pth'))
     _, easy_acc, easy_preds, easy_labels = evaluate(

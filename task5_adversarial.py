@@ -82,7 +82,7 @@ class TargetedPGDAttack:
             'success': success,
             'final_confidence': final_confidence,
             'predicted': predicted,
-            'num_steps': step + 1,
+            'nAum_steps': step + 1,
             'confidence_history': confidence_history,
             'perturbation_history': perturbation_history,
             'max_perturbation': perturbation.abs().max().item()
@@ -428,7 +428,7 @@ def visualize_attack_results(results, source_digit=7, target_digit=3):
     
     plt.tight_layout()
     plt.savefig('outputs/task5_adversarial_comparison.png', dpi=150, bbox_inches='tight')
-    plt.show()
+    plt.close()
 
 def measure_attack_difficulty(model, model_name, num_samples=20, epsilon=0.05):
     perturbation_magnitudes = []
@@ -473,7 +473,7 @@ def run_task5():
     
     plt.tight_layout()
     plt.savefig('outputs/task5_adversarial_comparison.png', dpi=150, bbox_inches='tight')
-    plt.show()
+    plt.close()
 
 if __name__ == '__main__':
     os.makedirs('outputs', exist_ok=True)
